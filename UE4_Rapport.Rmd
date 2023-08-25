@@ -1,0 +1,1180 @@
+---
+title: "Rédaction d'un rapport d'analyse"
+output: html_notebook
+---
+
+On commence par appeler les bibliothèques utiles
+```{r}
+#Appel des bibliothèques utiles
+library(dplyr)
+library(ggplot2)
+library(forcats)
+library(extrafont)
+library(stringr)
+library(tidyr)
+library(purrr)
+library(plotly)
+library(crosstalk)
+library(data.table)
+library(knitr)
+library(rstatix)
+library(rcompanion)
+library(ggpubr)
+library(questionr)
+library(naniar)
+library(forestmodel)
+library(finalfit)
+library(readr)
+library(readxl)
+library(lubridate)
+library(car)
+library(clipr)
+library(corrplot)
+```
+
+<br>
+<br>
+
+### 1. Préparation du jeu de données
+
+#### 1.1. Import et premier examen des jeux annuels
+
+```{r}
+path <- file.path("~", "Dataset", "ofgl_2018.csv")
+ofgl2018 <- read.csv2(file = path, stringsAsFactors = FALSE, dec = ".", colClasses=c("Siret.Budget" = "character")) 
+```
+```{r}
+dim(ofgl2018)
+```
+```{r include=FALSE}
+str(ofgl2018)
+```
+
+<br>
+
+```{r}
+path <- file.path("~", "Dataset", "ofgl_2019.csv")
+ofgl2019 <- read.csv2(file = path, stringsAsFactors = FALSE, dec = ".", colClasses=c("Siret.Budget" = "character"))
+```
+```{r}
+dim(ofgl2019)
+```
+```{r include=FALSE}
+str(ofgl2019)
+```
+<br>
+<br>
+
+```{r}
+path <- file.path("~", "Dataset", "ofgl_2020.csv")
+ofgl2020 <- read.csv2(file = path, stringsAsFactors = FALSE, dec = ".", colClasses=c("Siret.Budget" = "character"))
+```
+```{r}
+dim(ofgl2020)
+```
+```{r include=FALSE}
+str(ofgl2020)
+```
+
+<br>
+<br>
+
+```{r}
+path <- file.path("~", "Dataset", "ofgl_2021.csv")
+ofgl2021 <- read.csv2(file = path, stringsAsFactors = FALSE, dec = ".", colClasses=c("Siret.Budget" = "character"))
+```
+```{r}
+dim(ofgl2021)
+```
+```{r}
+str(ofgl2021)
+```
+
+<br>
+<br>
+
+```{r}
+path <- file.path("~", "Dataset", "ofgl_2022.csv")
+ofgl2022 <- read.csv2(file = path, stringsAsFactors = FALSE, dec = ".", colClasses=c("Siret.Budget" = "character"))
+```
+```{r}
+dim(ofgl2022)
+```
+```{r}
+str(ofgl2022)
+```
+
+<br>
+<br>
+<br>
+<br>
+
+#### 1.2. Transformation des jeux annuels
+
+<br>
+
+##### 1.2.1. Jeu de 2018
+
+<br>
+
+###### 1.2.1.1. Sélection des variables
+
+On commence par sélectionner les variables utiles pour notre future analyse.
+
+```{r}
+o2018 <- ofgl2018 %>%
+  filter(Outre.mer == "Non", Type.de.budget == "Budget principal") %>%
+  rename(Siret = Siret.Budget, Département = Nom.2022.Département, Région = Nom.2022.Région, Pop = Population.totale, Strate_pop = Strate.population.2022, Outre_mer = Outre.mer, Commune_rurale = Commune.rurale, Commune_montagne = Commune.de.montagne, Commune_touristique = Commune.touristique, Présence_QPV = Présence.QPV) %>%
+  select(Exercice, Siret, Département, Région, Type.de.budget, Pop, Strate_pop, Outre_mer, Commune_rurale, Commune_montagne, Commune_touristique, Présence_QPV, Agrégat, Montant) 
+
+```
+```{r}
+dim(o2018)
+```
+```{r}
+str(o2018)
+```
+<br>
+
+###### 1.2.1.2. Pivotement du fichier 
+
+Ce fichier contient une variable "Agrégat" dont les valeurs sont elles-mêmes des variables. Aussi, il convient de faire pivoter ce fichier afin de faire apparaitre ces variables. Cette opération aura pour effet de réduire le nombre d'observations par augmentation du nombre de variables.
+```{r}
+o2018_rec <- o2018 %>%
+  pivot_wider(names_from = Agrégat, values_from = Montant)
+```
+```{r}
+dim(o2018_rec)
+```
+```{r}
+str(o2018_rec)
+```
+
+<br>
+
+```{r}
+write_clip(o2018_rec, sep = "\t", row.names = FALSE, col.names = TRUE, object_type = c("table"))
+```
+
+<br>
+
+###### 1.2.1.3. Calcul et sélection des agrégats par habitant
+
+La fonction pivot_wide ayant transformé le jeu en simple table, il convient de la retransformer en jeu de données. <br>
+On en profite pour : <br> 
+ - calculer les agrégats par habitants de façon à pouvoir comparer les communes entre elles quelle que soit leur taille, <br>
+ - ne sélectionner que ces nouvelles variables utiles à notre future analyse.
+
+```{r}
+o2018_rec <- data.frame(o2018_rec) %>%
+  mutate(Recettes_Fct = Recettes.de.fonctionnement/Pop,
+         Dépenses_Fct = Dépenses.de.fonctionnement/Pop,
+         Recettes_Ivt = Recettes.d.investissement/Pop,
+         Dépenses_Ivt = Dépenses.d.investissement/Pop,
+         Trésorerie = Dépôts.au.Trésor/Pop,
+         Epargne_brute = Epargne.brute/Pop,
+         CAF = Capacité.ou.besoin.de.financement/Pop,
+         Encours_dette = Encours.de.dette/Pop,
+         Epargne_gestion = Epargne.de.gestion/Pop, 
+         Annuité_dette = Annuité.de.la.dette/Pop,
+         Epargne_nette = Epargne.nette/Pop,
+         Flux_net_dette = Flux.net.de.dette/Pop,
+         Variation_FDR = Variation.du.fonds.de.roulement/Pop) %>%
+  select(Exercice,Siret,Département,Région,Pop,Strate_pop,Outre_mer,Commune_rurale,Commune_montagne,Commune_touristique,Présence_QPV,Recettes_Fct,Dépenses_Fct,Recettes_Ivt,Dépenses_Ivt,Trésorerie,Epargne_brute,CAF,Encours_dette,Epargne_gestion,Annuité_dette,Epargne_nette,Flux_net_dette,Variation_FDR)
+```
+```{r include=FALSE}
+str(o2018_rec)
+```
+
+<br>
+<br>
+
+##### 1.2.2. Jeu de 2019
+
+On procède de la même façon que pour le jeu de 2018.
+
+<br>
+
+###### 1.2.2.1. Sélection des variables
+
+```{r}
+o2019 <- ofgl2019 %>%
+  filter(Outre.mer == "Non", Type.de.budget == "Budget principal") %>%
+  rename(Siret = Siret.Budget, Département = Nom.2022.Département, Région = Nom.2022.Région, Pop = Population.totale, Strate_pop = Strate.population.2022, Outre_mer = Outre.mer, Commune_rurale = Commune.rurale, Commune_montagne = Commune.de.montagne, Commune_touristique = Commune.touristique, Présence_QPV = Présence.QPV) %>%
+  select(Exercice, Siret, Département, Région, Type.de.budget, Pop, Strate_pop, Outre_mer, Commune_rurale, Commune_montagne, Commune_touristique, Présence_QPV, Agrégat, Montant) 
+```
+```{r}
+dim(o2019)
+```
+```{r}
+str(o2019)
+```
+<br>
+
+###### 1.2.2.2. Pivotement du fichier
+
+```{r}
+o2019_rec <- o2019 %>%
+    pivot_wider(names_from = Agrégat, values_from = Montant)
+```
+```{r}
+dim(o2019_rec)
+```
+```{r}
+str(o2019_rec)
+```
+
+<br>
+
+###### 1.2.2.3. Calcul et sélection des agrégats par habitant
+
+```{r}
+o2019_rec <- data.frame(o2019_rec) %>%
+  mutate(Recettes_Fct = Recettes.de.fonctionnement/Pop,
+         Dépenses_Fct = Dépenses.de.fonctionnement/Pop,
+         Recettes_Ivt = Recettes.d.investissement/Pop,
+         Dépenses_Ivt = Dépenses.d.investissement/Pop,
+         Trésorerie = Dépôts.au.Trésor/Pop,
+         Epargne_brute = Epargne.brute/Pop,
+         CAF = Capacité.ou.besoin.de.financement/Pop,
+         Encours_dette = Encours.de.dette/Pop,
+         Epargne_gestion = Epargne.de.gestion/Pop, 
+         Annuité_dette = Annuité.de.la.dette/Pop,
+         Epargne_nette = Epargne.nette/Pop,
+         Flux_net_dette = Flux.net.de.dette/Pop,
+         Variation_FDR = Variation.du.fonds.de.roulement/Pop) %>%
+  select(Exercice,Siret,Département,Région,Pop,Strate_pop,Outre_mer,Commune_rurale,Commune_montagne,Commune_touristique,Présence_QPV,Recettes_Fct,Dépenses_Fct,Recettes_Ivt,Dépenses_Ivt,Trésorerie,Epargne_brute,CAF,Encours_dette,Epargne_gestion,Annuité_dette,Epargne_nette,Flux_net_dette,Variation_FDR)
+```
+```{r}
+str(o2019_rec)
+```
+<br>
+<br>
+
+##### 1.2.3. Jeu de 2020
+
+<br>
+
+###### 1.2.3.1. Sélection des variables
+
+```{r}
+o2020 <- ofgl2020 %>%
+  filter(Outre.mer == "Non", Type.de.budget == "Budget principal") %>%
+  rename(Siret = Siret.Budget, Département = Nom.2022.Département, Région = Nom.2022.Région, Pop = Population.totale, Strate_pop = Strate.population.2022, Outre_mer = Outre.mer, Commune_rurale = Commune.rurale, Commune_montagne = Commune.de.montagne, Commune_touristique = Commune.touristique, Présence_QPV = Présence.QPV) %>%
+  select(Exercice, Siret, Département, Région, Type.de.budget, Pop, Strate_pop, Outre_mer, Commune_rurale, Commune_montagne, Commune_touristique, Présence_QPV, Agrégat, Montant) 
+```
+```{r}
+dim(o2020)
+```
+```{r}
+str(o2020)
+```
+
+<br>
+
+###### 1.2.3.2. Pivotement du fichier
+
+```{r}
+o2020_rec <- o2020 %>%
+    pivot_wider(names_from = Agrégat, values_from = Montant)
+```
+```{r}
+dim(o2020_rec)
+```
+```{r}
+str(o2020_rec)
+```
+
+<br>
+
+###### 1.2.3.3. Calcul et sélection des agrégats par habitant
+
+```{r}
+o2020_rec <- data.frame(o2020_rec) %>%
+  mutate(Recettes_Fct = Recettes.de.fonctionnement/Pop,
+         Dépenses_Fct = Dépenses.de.fonctionnement/Pop,
+         Recettes_Ivt = Recettes.d.investissement/Pop,
+         Dépenses_Ivt = Dépenses.d.investissement/Pop,
+         Trésorerie = Dépôts.au.Trésor/Pop,
+         Epargne_brute = Epargne.brute/Pop,
+         CAF = Capacité.ou.besoin.de.financement/Pop,
+         Encours_dette = Encours.de.dette/Pop,
+         Epargne_gestion = Epargne.de.gestion/Pop, 
+         Annuité_dette = Annuité.de.la.dette/Pop,
+         Epargne_nette = Epargne.nette/Pop,
+         Flux_net_dette = Flux.net.de.dette/Pop,
+         Variation_FDR = Variation.du.fonds.de.roulement/Pop) %>%
+  select(Exercice,Siret,Département,Région,Pop,Strate_pop,Outre_mer,Commune_rurale,Commune_montagne,Commune_touristique,Présence_QPV,Recettes_Fct,Dépenses_Fct,Recettes_Ivt,Dépenses_Ivt,Trésorerie,Epargne_brute,CAF,Encours_dette,Epargne_gestion,Annuité_dette,Epargne_nette,Flux_net_dette,Variation_FDR)
+```
+```{r}
+str(o2020_rec)
+```
+<br>
+<br>
+
+##### 1.2.4. Jeu de 2021
+
+<br>
+
+###### 1.2.4.1. Sélection des variables
+
+```{r}
+o2021 <- ofgl2021 %>%
+  filter(Outre.mer == "Non", Type.de.budget == "Budget principal") %>%
+  rename(Siret = Siret.Budget, Département = Nom.2022.Département, Région = Nom.2022.Région, Pop = Population.totale, Strate_pop = Strate.population.2022, Outre_mer = Outre.mer, Commune_rurale = Commune.rurale, Commune_montagne = Commune.de.montagne, Commune_touristique = Commune.touristique, Présence_QPV = Présence.QPV) %>%
+  select(Exercice, Siret, Département, Région, Type.de.budget, Pop, Strate_pop, Outre_mer, Commune_rurale, Commune_montagne, Commune_touristique, Présence_QPV, Agrégat, Montant) 
+```
+```{r}
+dim(o2021)
+```
+```{r}
+str(o2021)
+```
+
+<br>
+
+###### 1.2.4.2. Pivotement du fichier
+
+```{r}
+o2021_rec <- o2021 %>%
+    pivot_wider(names_from = Agrégat, values_from = Montant)
+```
+```{r}
+dim(o2021_rec)
+```
+```{r}
+str(o2021_rec)
+```
+
+<br>
+
+###### 1.2.4.3. Calcul et sélection des agrégats par habitant
+
+```{r}
+o2021_rec <- data.frame(o2021_rec) %>%
+  mutate(Recettes_Fct = Recettes.de.fonctionnement/Pop,
+         Dépenses_Fct = Dépenses.de.fonctionnement/Pop,
+         Recettes_Ivt = Recettes.d.investissement/Pop,
+         Dépenses_Ivt = Dépenses.d.investissement/Pop,
+         Trésorerie = Dépôts.au.Trésor/Pop,
+         Epargne_brute = Epargne.brute/Pop,
+         CAF = Capacité.ou.besoin.de.financement/Pop,
+         Encours_dette = Encours.de.dette/Pop,
+         Epargne_gestion = Epargne.de.gestion/Pop, 
+         Annuité_dette = Annuité.de.la.dette/Pop,
+         Epargne_nette = Epargne.nette/Pop,
+         Flux_net_dette = Flux.net.de.dette/Pop,
+         Variation_FDR = Variation.du.fonds.de.roulement/Pop) %>%
+  select(Exercice,Siret,Département,Région,Pop,Strate_pop,Outre_mer,Commune_rurale,Commune_montagne,Commune_touristique,Présence_QPV,Recettes_Fct,Dépenses_Fct,Recettes_Ivt,Dépenses_Ivt,Trésorerie,Epargne_brute,CAF,Encours_dette,Epargne_gestion,Annuité_dette,Epargne_nette,Flux_net_dette,Variation_FDR)
+```
+```{r}
+str(o2021_rec)
+```
+<br>
+<br>
+
+##### 1.2.5. Jeu de 2022
+
+<br>
+
+###### 1.2.5.1. Sélection des variables
+
+```{r}
+o2022 <- ofgl2022 %>%
+  filter(Outre.mer == "Non", Type.de.budget == "Budget principal") %>%
+  rename(Siret = Siret.Budget, Département = Nom.2022.Département, Région = Nom.2022.Région, Pop = Population.totale, Strate_pop = Strate.population.2022, Outre_mer = Outre.mer, Commune_rurale = Commune.rurale, Commune_montagne = Commune.de.montagne, Commune_touristique = Commune.touristique, Présence_QPV = Présence.QPV) %>%
+  select(Exercice, Siret, Département, Région, Type.de.budget, Pop, Strate_pop, Outre_mer, Commune_rurale, Commune_montagne, Commune_touristique, Présence_QPV, Agrégat, Montant) 
+```
+```{r}
+dim(o2022)
+```
+```{r}
+str(o2022)
+```
+<br>
+
+###### 1.2.5.2. Pivotement du fichier
+
+```{r}
+o2022_rec <- o2022 %>%
+    pivot_wider(names_from = Agrégat, values_from = Montant)
+```
+```{r}
+dim(o2022_rec)
+```
+```{r}
+str(o2022_rec)
+```
+
+<br>
+
+###### 1.2.5.3. Calcul et sélection des agrégats par habitant
+
+```{r}
+o2022_rec <- data.frame(o2022_rec) %>%
+  mutate(Recettes_Fct = Recettes.de.fonctionnement/Pop,
+         Dépenses_Fct = Dépenses.de.fonctionnement/Pop,
+         Recettes_Ivt = Recettes.d.investissement/Pop,
+         Dépenses_Ivt = Dépenses.d.investissement/Pop,
+         Trésorerie = Dépôts.au.Trésor/Pop,
+         Epargne_brute = Epargne.brute/Pop,
+         CAF = Capacité.ou.besoin.de.financement/Pop,
+         Encours_dette = Encours.de.dette/Pop,
+         Epargne_gestion = Epargne.de.gestion/Pop, 
+         Annuité_dette = Annuité.de.la.dette/Pop,
+         Epargne_nette = Epargne.nette/Pop,
+         Flux_net_dette = Flux.net.de.dette/Pop,
+         Variation_FDR = Variation.du.fonds.de.roulement/Pop) %>%
+  select(Exercice,Siret,Département,Région,Pop,Strate_pop,Outre_mer,Commune_rurale,Commune_montagne,Commune_touristique,Présence_QPV,Recettes_Fct,Dépenses_Fct,Recettes_Ivt,Dépenses_Ivt,Trésorerie,Epargne_brute,CAF,Encours_dette,Epargne_gestion,Annuité_dette,Epargne_nette,Flux_net_dette,Variation_FDR)
+  
+```
+```{r}
+str(o2022_rec)
+```
+<br>
+<br>
+<br>
+<br>
+
+#### 1.3. Création d'un jeu unique 
+
+<br>
+
+##### 1.3.1. Assemblage des 5 fichiers annuels
+
+On assemble les cinq jeux annuels dans un jeu de données unique appelé "ofgl" grâce à des jointures internes afin de garder les communes présentent dans l'ensemble des fichiers
+```{r}
+ofgl <- o2018_rec %>% 
+  inner_join(o2019_rec, by = "Siret", suffix = c("_2018", "_2019")) %>%
+  inner_join(o2020_rec, by = "Siret", suffix = c("_2019", "_2020")) %>%
+  inner_join(o2021_rec, by = "Siret", suffix = c("_2020", "_2021")) %>%
+  inner_join(o2022_rec, by = "Siret", suffix = c("_2021","_2022")) 
+```
+```{r}
+dim(ofgl)
+```
+```{r}
+str(ofgl)
+```
+<br>
+Nous obtenons un jeu contenant 34 348 observations, ce qui est cohérent avec le nombre de communes en France.
+Pour faciliter la lecture et la manipulation du jeu, nous allons renommer les variables de 2022 et supprimer les variables catégorielles "doublons". 
+
+```{r}
+ofgl <- ofgl %>%
+  select(Siret, Département:Présence_QPV, Recettes_Fct_2018:Variation_FDR_2018,
+         Recettes_Fct_2019:Variation_FDR_2019, Recettes_Fct_2020:Variation_FDR_2020,
+         Recettes_Fct_2021:Variation_FDR_2021, Recettes_Fct:Variation_FDR) %>%
+  rename(Recettes_Fct_2022 = Recettes_Fct, Dépenses_Fct_2022 = Dépenses_Fct, Recettes_Ivt_2022 = Recettes_Ivt, Dépenses_Ivt_2022 = Dépenses_Ivt, Trésorerie_2022 = Trésorerie, Epargne_brute_2022 = Epargne_brute, CAF_2022 = CAF, Encours_dette_2022 = Encours_dette, Epargne_gestion_2022 = Epargne_gestion, Annuité_dette_2022 = Annuité_dette, Epargne_nette_2022 = Epargne_nette, Flux_net_dette_2022 = Flux_net_dette, Variation_FDR_2022 = Variation_FDR) 
+```
+```{r}
+dim(ofgl)
+```
+```{r}
+str(ofgl)
+```
+
+Nous avons ainsi réduit notre jeu de 116 à 75 variables.
+
+<br>
+<br>
+
+##### 1.3.2. Fusion avec le fichier IG
+
+Le fichier IG est le fichier d'aide à la programmation interne aux juridictions financières. Il contient notamment, pour chaque commune, son indice global de défaillance, calculé à partir des agrégats fianciers au 31 décembre de l'année. 
+
+<br>
+
+###### 1.3.2.1. Chargement du jeu
+
+```{r}
+path <- file.path("~", "Dataset", "IG.xlsx")
+IG <- read_excel(path, col_types = c("text","text","text","text","numeric","numeric","text","numeric","numeric","numeric","numeric","numeric","numeric","numeric","numeric","numeric","numeric","numeric","numeric","numeric","numeric","numeric","numeric","numeric","numeric","numeric","numeric")) 
+```
+```{r}
+dim(IG)
+```
+
+```{r}
+head(IG)
+```
+<br>
+
+Le jeu IG contient notamment deux variables qui nous intéresse : l'indice global de la commune et son identifiant, qui correspond à son numéro de siret et qui va nous permettre de réaliser une jointure avec le fichier complet. Nous ne gardons donc que ces deux variables.
+```{r}
+IG <- IG %>%
+  select(Identifiant, `Indice global`)
+```
+```{r}
+dim(IG)
+```
+
+<br>
+<br>
+
+###### 1.3.2.2. Jointure des fichiers complet et IG
+
+Comme on souhaite garder les observations qui apparaissent dans les deux fichiers, nous allons utiliser une jointure interne. 
+
+```{r}
+ofglig <- ofgl %>%
+  inner_join(IG, by = c("Siret" = "Identifiant")) %>%
+  rename(IG = "Indice global")
+```
+```{r}
+dim(ofglig)
+```
+```{r}
+str(ofglig)
+```
+```{r eval=FALSE, include=FALSE}
+fwrite(ofglig, "C:\\Users\\Sarah\\Documents\\DUDA_sets\\table_export_ThibaultS.csv")
+```
+
+
+<br>
+<br>
+
+##### 1.3.3. Création d'une variable binaire
+
+Une commune est considérée comme financièrement défaillante dès lors que son IG est supérieur à 7. Nous allons créer une variable supplémentaire, de type binaire, répondant à la question de savoir si, au 31 décembre 2022, la commune est défaillante.
+
+
+```{r} 
+ofglig <- ofglig %>%
+  mutate(Défaillance = ifelse(IG > 7, yes = "Oui", no = "Non")) 
+```
+```{r}
+dim(ofglig)
+```
+
+```{r}
+head(ofglig)
+```
+
+<br>
+<br>
+<br>
+<br>
+
+#### 1.4. Nettoyage du jeu définitif
+
+On commence par s'assurer de l'absence de données explicitement manquantes. 
+
+```{r}
+miss_var_summary(ofglig)
+```
+
+<br>
+<br>
+
+On s'assure ensuite que notre jeu ne contient pas doublons
+
+```{r}
+sum(duplicated(ofglig))
+```
+
+<br>
+<br>
+<br>
+<br>
+
+### 2. Analyse
+
+<br>
+
+#### 2.1. Premières représentations
+
+<br>
+
+##### 2.1.1. Pourcentage des communes défaillantes par région en 2022
+```{r}
+bg1 <- ofglig %>%
+  group_by(Défaillance, Région) %>% 
+  count(Défaillance) %>%
+  summarize(Nombre = sum(n)) %>% 
+  #ungroup %>%
+  pivot_wider(names_from = Défaillance, values_from = Nombre) %>%
+  group_by(Région) %>%
+  mutate(total = sum(Non, Oui), Proportion = round((Oui/total*100),1))
+bg1
+```
+```{r}
+summary(bg1)
+```
+
+
+```{r}
+graph1 <- ggplot(bg1, aes(Région, Proportion, fill = Région)) +
+  geom_col() + 
+  labs(title = "Graphique n° 1 : Pourcentage de communes financièrement défaillantes en 2022 par région", y = "Pourcentage") +
+  theme(axis.text.x = element_text(angle=45, hjust = 1), 
+        legend.position = "none", 
+        text = element_text(family="Times New Roman"),
+        plot.title = element_text(face = "bold", size = 12)) + 
+  ylim(0,10)
+graph1
+```
+On constate qu'en 2022, 8 des 13 régions métropolitaines ont un pourcentage de communes financièrement défaillantes supérieur à la moyenne (5,8 %).
+
+
+<br>
+<br>
+
+##### 2.1.2. Nombre de communes et pourcentage des communes défaillantes par région en 2022
+
+
+```{r}
+graph2 <- ggplot(bg1, aes(Région, total, color = Proportion)) +
+  geom_point(size =5)  + 
+  labs(title = "Graphique n° Y : Pourcentage de communes financièrement défaillantes en 2022 par région", 
+       y = "Nombre total de communes dans la région", 
+       color = "Pourcentage de communes défaillantes") +
+  theme(axis.text.x = element_text(angle=45, hjust = 1), 
+        text = element_text(family="Times New Roman"), 
+        legend.position = "bottom") + 
+  scale_color_gradient(low = "green", high = "red")
+graph2
+```
+
+Avec prise en compte du niveau de population
+```{r}
+bg1bis <- ofglig %>%
+  group_by(Région) %>%
+  select(Région, Pop) %>%
+  summarize(Pop_reg = sum(Pop))
+bg1bis
+```
+
+```{r}
+bg2 <- bg1bis %>%
+  inner_join(bg1, by = "Région")
+bg2
+```
+
+
+
+```{r}
+graph2bis <- ggplot(bg2, aes(Région, total, color = Proportion, size = Pop_reg)) +
+  geom_point()  + 
+  labs(title = "Graphique n° Y : Pourcentage de communes financièrement défaillantes en 2022 par région", 
+       y = "Nombre total de communes dans la région", 
+       color = "Pourcentage de communes défaillantes", 
+       size = "Population régionale") +
+  theme(axis.text.x = element_text(angle=45, hjust = 1), 
+        text = element_text(family="Times New Roman")) + 
+  scale_color_gradient(low = "green", high = "red")
+graph2bis
+```
+Ici, on peut constater que le nombre total de communes n'a pas d'influence sur le pourcentage de communes défaillantes au sein d'une même région. En effet, les régions Bretagne et Ile de France ont un nombre de communes équivalent mais un pourcentage de communes défaillantes totalement différent. <br>
+De la même façon, le niveau de population d'une région ne peut pas non plus expliquer la proportion de communes défaillantes : la région Centre Val de Loire a une population 4,6 fois plus petite que l'Ile de France alors que leur taux de communes défaillantes est assez proche (respectivement 8,3% et 8,7%).
+
+<br>
+<br>
+
+##### 2.1.3. Nombre de communes et pourcentage des communes défaillantes par région et par type de communes (selon un seuil de population fixé à plus ou 3500 et moins habitants) en 2022
+
+```{r}
+bg3 <- ofglig %>%
+  mutate(Seuil_pop = ifelse (Pop <= 3500, yes = "Petite", no = "Grande")) %>%
+  group_by(Région, Seuil_pop, Défaillance) %>% 
+  count(Défaillance) %>%
+  summarize(Nombre = sum(n)) %>% 
+  pivot_wider(names_from = Défaillance, values_from = Nombre) %>%
+  group_by(Région, Seuil_pop) %>%
+  mutate(total = sum(Non, Oui), Proportion = round((Oui/total*100),1))  
+bg3
+```
+
+```{r}
+graph3 <- ggplot(bg3, aes(Région, total, color = Proportion)) +
+  geom_point(size = 5)  + 
+  labs(title = "Graphique n° Y : Pourcentage de communes financièrement défaillantes en 2022 par région", 
+       y = "Nombre total de communes dans la région", 
+       color = "Pourcentage de communes défaillantes") +
+  theme(axis.text.x = element_text(angle=45, hjust = 1), 
+        text = element_text(family="Times New Roman"),
+        legend.position = "bottom") + 
+  scale_color_gradient(low = "green", high = "red") +
+  facet_grid(rows= vars(Seuil_pop))
+graph3
+```
+
+
+
+
+```{r}
+bg3bis <- ofglig %>%
+  mutate(Seuil_pop = ifelse (Pop <= 3500, yes = "Petite", no = "Grande")) %>%
+  group_by(Région, Seuil_pop) %>% 
+  summarize(Pop_reg = sum(Pop))
+bg3bis
+```
+```{r}
+bg3ter <- bg3bis %>%
+  inner_join(bg3, by =c("Région", "Seuil_pop"))
+bg3ter
+```
+
+
+```{r}
+graph3bis <- ggplot(bg3ter, aes(Région, total, color = Proportion, size = Pop_reg)) +
+  geom_point()  + 
+  labs(title = "Graphique n° 2 : Communes financièrement défaillantes en 2022 selon leur taille", 
+       y = "Nombre total de communes dans la région", 
+       color = "Pourcentage de communes défaillantes",
+       size = "Population") +
+  theme(axis.text.x = element_text(angle=45, hjust = 1), 
+        text = element_text(family="Times New Roman"),
+        plot.title = element_text(face = "bold")) + 
+  scale_color_gradient(low = "green", high = "red") +
+  facet_grid(rows= vars(Seuil_pop))
+graph3bis
+```
+
+<br>
+<br>
+
+#### 2.2. Vérification du modèle prédictif de 2016
+
+Comme la variable à prédire est binaire (oui/non), il est nécessaire d'utiliser un modèle de régression logistique.
+Le modèle de 2016 prenait comme variables explicatives : la CAF de l'année n-4, la CAF de l'année n-3 ainsi que les dépenses de fonctionnement de l'année n-3, soit la CAF 2018, la CAF 2019 et les dépenses de fonctionnement 2019.
+Pour vérifier que ce modèle est toujours pertinent en 2022, nous allons le tester sur notre jeu de données. 
+
+<br>
+
+##### 2.2.1. Réduction du jeu de données
+
+Nous devons commencer par réduire notre jeu aux seules communes de plus de 3500 habitants et par transformer les valeurs de la variable Défaillance en valeurs binaires (0 = non défaillante, 1 = défaillante)
+
+```{r}
+ofgl_gde <- ofglig %>%
+  filter(Pop > 3500) %>%
+  mutate(Défaillance = str_replace_all(Défaillance, "Oui", "1")) %>%
+  mutate(Défaillance = str_replace_all(Défaillance, "Non", "0")) %>%
+  mutate(Défaillance = as.numeric(Défaillance))
+```
+```{r}
+dim(ofgl_gde)
+```
+```{r}
+head(ofgl_gde)
+```
+
+<br>
+
+##### 2.2.2. Application du modèle de 2016 
+
+###### 2.2.2.1. Sans interaction entre variables explicatives
+
+```{r}
+mdl_fail <- glm(Défaillance ~ Dépenses_Fct_2019 + CAF_2018 + CAF_2019, data = ofgl_gde, family = binomial)
+mdl_fail
+```
+
+```{r}
+summary(mdl_fail)
+```
+
+
+```{r}
+odds.ratio(mdl_fail)
+```
+
+
+```{r}
+itpt <- c(0.056, 0.042, 0.075, " 2.2e-16 ***")
+dep19 <- c("1.000507", "1.000260", "1.0008", "4.728e-05 ***")
+caf18 <- c("1.000015", "0.999349", "1.0006", 0.962)
+caf19 <- c(0.999038, 0.9983736, 0.9997, "0.0048 **")
+
+table_fail = matrix(c(itpt, dep19, caf18, caf19),
+                             nrow = 4, ncol = 4, byrow = T)
+rownames(table_fail) <- c("Intercept", "Dépenses de fonctionnement 2019", "CAF 2018", "CAF 2019")
+colnames(table_fail) <- c("Odd Ratios", "2.5 %","97.5 %", "p-value")
+
+kable(table_fail, align = c("c", "c", "c", "c"))
+```
+
+
+###### 2.2.2.2. Avec interactions entre variables explicatives
+
+```{r}
+mdl_faili <- glm(Défaillance ~ Dépenses_Fct_2019 + CAF_2018 + CAF_2019 + Dépenses_Fct_2019 * CAF_2018 * CAF_2019, data = ofgl_gde, family = binomial)
+mdl_faili
+```
+
+
+```{r}
+odds.ratio(mdl_faili)
+```
+
+Les AIC du modèle de 2016 sans et avec intercations entre variables explicatives sont respectivment 1801 et 1796. De plus, dans ce modèle seules les dépenses de fonctionnement et la CAF de l'exercice 2019 semblent être réellement pertinentes.
+On va donc chercher à améliorer le modèle.
+
+<br>
+<br>
+
+#### 2.3. Recherche de variables financières corrélées
+
+<br>
+
+##### 2.3.1. Matrice de corrélation
+
+<br>
+
+###### 2.3.1.1. Réalisation de la matrice
+
+Le but ici est de créer une matrice de corrélation entre variable numérique afin de détecter les variables fortement corrélées (positivement ou négativement) à la variable Défaillance.
+
+```{r}
+ofgl_num <- select_if(ofgl_gde, is.numeric)
+dim(ofgl_num)
+corrplot(round(cor(ofgl_num),2),method="circle",tl.cex=0.5,type="lower")
+```
+La représentation des corrélations ne montre pas de corrélation positive entre la variable Défaillance et les autres variables numériques. En revanche, on constate que l'IG, qui sert de base à la variable Défaillance, est faiblement mais négativement corrélé aux variables relatives à l'épargne. 
+
+De fait, nous allons de prendre en compte l'épargne nette 2019 à la place de la CAF 2018.
+
+<br>
+
+###### 2.3.1.2. Nouveau modèle sans intéraction
+
+```{r}
+mdl_fail_2 <- glm(Défaillance ~ Dépenses_Fct_2019 + Epargne_nette_2019 + CAF_2019 , data = ofgl_gde, family = binomial)
+mdl_fail_2
+```
+
+```{r}
+odds.ratio(mdl_fail_2)
+```
+
+
+```{r}
+itpt_2 <- c(0.069, 0.049, 0.098, " 2.2e-16 ***")
+dep19_2 <- c("1.000958", "1.000641", "1.0013", "1.188e-09 ***")
+epnet_2 <- c("0.991329", "0.989784", "0.9928", "< 2.2e-16 ***")
+caf19_2 <- c(0.998846, 0.998136, 0.9996, "0.001461 **")
+
+table_fail_2 = matrix(c(itpt_2, dep19_2, epnet_2, caf19_2),
+                             nrow = 4, ncol = 4, byrow = T)
+rownames(table_fail_2) <- c("Intercept", "Dépenses de fonctionnement", "Épargne nette", "CAF")
+colnames(table_fail_2) <- c("Odd Ratios", "2.5 %","97.5 %", "p-value")
+
+kable(table_fail_2, align = c("c", "c", "c", "c"))
+```
+
+<br>
+
+###### 2.3.1.3.  Avec interaction 
+
+
+```{r}
+mdl_fail_2i <- glm(Défaillance ~ Dépenses_Fct_2019 + Epargne_nette_2019 + CAF_2019 + Dépenses_Fct_2019 * Epargne_nette_2019 * CAF_2019, data = ofgl_gde, family = binomial)
+mdl_fail_2i
+```
+
+```{r}
+odds.ratio(mdl_fail_2i)
+```
+Ce dernier modèle avec interaction entre variables Dépenses de fonctionnement, Epargne nette et CAF de l'année 2019 présente un AIC inférieur aux modèles précédents ; il apparait donc comme plus ajusté que les autres. Cependant, l'AIC reste encore élevé
+
+<br>
+<br>
+
+##### 2.3.2. Méthodes pas à pas
+
+<br>
+
+Dans la mesure où l'on cherche à prédire N-3 les défaillances effectives en N, nous allons nous concentrer sur les variables financières de l'année 2019 pour utiliser les méthodes pas à pas.
+
+
+```{r}
+#création d'un jeu réduit à la variable à prédire (Défaillance) et aux variables financières de l'exercice 2019.
+ofgl_num_2019 <- ofgl_num %>%
+  select(Défaillance, Recettes_Fct_2019:Variation_FDR_2019)
+str(ofgl_num_2019)
+```
+
+```{r}
+# création d'un modèle reprenant toutes les variables financières de 2019.
+mdl_pàp <- glm(Défaillance ~ ., data = ofgl_num_2019, family = binomial)
+mdl_pàp
+```
+
+<br>
+
+###### 2.3.2.1. Méthode forward
+
+```{r}
+mforward <- step(mdl_pàp,Défaillance~.,data=ofgl_num_2019,trace=F,direction=c("forward"))
+
+```
+
+
+<br>
+
+###### 2.3.2.2. Méthode backward
+
+```{r}
+mbackward <-step(mdl_pàp,Défaillance~.,data=ofgl_num_2019,trace=F,direction=c("backward"))
+
+```
+
+<br>
+
+###### 2.3.2.3. Méthode both
+
+```{r}
+mboth <-step(mdl_pàp,Défaillance~.,data=ofgl_num_2019,trace=F,direction=c("both"))
+
+```
+
+<br>
+
+###### 2.3.2.4. Comparaison des méthodes
+
+```{r}
+AIC(mforward)
+AIC(mbackward)
+AIC(mboth)
+
+```
+
+```{r}
+aic <- c(1541.77, 1539.32, 1539.32)
+table_aic = matrix(aic, nrow = 3, ncol = 1, byrow = T)
+rownames(table_aic) <- c("Méthode descendante", "Méthode ascendante", "Méthode mixte")
+colnames(table_aic) <- "AIC"
+kable(table_aic)
+```
+
+
+Les méthodes backward et both arrivent au même AIC en retenant les mêmes variables. Nous allons donc retenir le modèle auquel elles aboutissent.
+
+
+```{r}
+summary(mboth)
+```
+
+
+```{r}
+odds.ratio(mboth)
+```
+```{r}
+itpt_both <- c(0.079568, 0.053292, 0.1220, "< 2.2e-16 ***")
+recf_both <- c("1.014502", "1.003104", "1.0266", "0.0178376 *")
+depf_both <- c("0.986978", "0.975337", "0.9982", "0.0313491 *")
+depi_both <- c(0.997753, 0.996523, 0.9988, "0.0001513 ***")
+caf_both <- c("0.997518", "0.996065", "0.9988", "0.0004361 ***")
+encours_both <- c("1.001421", "1.001002", "1.0018", "5.713e-11 ***")
+epg_both <- c("0.991698", "0.986642", "0.9966", "0.0012778 **")
+annuite_both <- c("0.990075", "0.978618", "1.0011", "0.0929852 .")
+epn_both <- c("0.983296", "0.970856", "0.9951", "0.0088280 ** ")
+table_both = matrix(c(itpt_both, recf_both, depf_both, depi_both, caf_both, encours_both, epg_both, annuite_both, epn_both),
+                             nrow = 9, ncol = 4, byrow = T)
+rownames(table_both) <- c("Intercept", "Recettes de fonctionnement", "Dépenses de fonctionnement", "Dépenses d'investissement", "CAF", "Encours de dette", "Épargne de gestion","Annuité de la dette", "Épargne nette")
+colnames(table_both) <- c("Odd Ratios", "2.5 %","97.5 %", "p-value")
+
+kable(table_both, align = c("c", "c", "c", "c", "c", "c", "c", "c", "c"))
+```
+
+<br>
+<br>
+
+
+#### 2.4. Prise en compte de variables catégorielles
+
+<br>
+
+##### 2.4.1. Test de la variable Commune_rurale
+
+```{r}
+co_rurale <- ofgl_gde %>%
+  group_by(Commune_rurale, Défaillance) %>%
+  count(Commune_rurale) %>% 
+  #summarize(Nombre = sum(n)) %>% 
+  #ungroup %>%
+  pivot_wider(names_from = Commune_rurale, values_from = n) 
+co_rurale
+```
+
+```{r}
+rurale_chi = matrix(c(co_rurale$Non, co_rurale$Oui), ncol = 2, byrow = F)
+colnames(rurale_chi) <- c("Commune non rurale", "Commune rurale")
+rownames(rurale_chi) <- c("Commune non défaillante", "Commune défaillante")
+kable(rurale_chi, align = c("c", "c"))
+```
+
+
+
+
+```{r}
+rurale_chi_test <- chisq.test(rurale_chi)
+rurale_chi_test
+```
+
+```{r}
+cramerV(rurale_chi)
+```
+
+
+```{r}
+mosaicplot(rurale_chi, shade = T, main = "", las = 1)
+```
+
+
+Le test du chi2 est un test d’indépendance qui utilise les hypothèses suivantes : <br>
+- hypothèse nulle : les deux variables sont indépendantes, <br>
+- hypothèse alternative : les deux variables ne sont pas indépendantes.
+<br>
+Ici, la p-value est supérieure à 0.001, on peut rejeter l'hypothèse alternative : les variables sont indépendantes (x²(1) = 1.47, p < 0.0001 ***). 
+Ce résultat est confirmé par le test de Cramer (V de Cramer : V = 0.03).
+
+
+<br>
+
+##### 2.4.2. Test de la variable Présence_QPV
+
+```{r}
+co_qpv <- ofgl_gde %>%
+  group_by(Présence_QPV, Défaillance) %>%
+  count(Présence_QPV) %>% 
+  #summarize(Nombre = sum(n)) %>% 
+  #ungroup %>%
+  pivot_wider(names_from = Présence_QPV, values_from = n) 
+co_qpv
+```
+
+
+```{r}
+qpv_chi = matrix(c(co_qpv$Non, co_qpv$Oui), ncol = 2, byrow = F)
+colnames(qpv_chi) <- c("Commune sans QPV", "Commune avec QPV")
+rownames(qpv_chi) <- c("Commune non défaillante", "Commune défaillante")
+kable(qpv_chi, align = c("c", "c"))
+```
+
+```{r}
+qpv_chi_test <- chisq.test(qpv_chi)
+qpv_chi_test
+```
+
+
+```{r}
+cramerV(qpv_chi)
+```
+
+```{r}
+mosaicplot(qpv_chi, shade = T, main = "", las = 1)
+```
+
+Ici, la p_value est inférieure à 0.001, on peut rejeter l'hypothèse nulle : les variables Présence_QPV et Défaillance sont dépendantes (x²(1) = 39.6, p < 0.0001 ***). Toutefois, la force de cette dépendance est faible (V de Cramer : V = 0.12).
+
+
+
+<br>
+
+##### 2.4.3. Test de la variable Strate_pop
+
+```{r}
+co_strat <- ofgl_gde %>%
+  group_by(Strate_pop, Défaillance) %>%
+  count(Strate_pop) %>% 
+  #summarize(Nombre = sum(n)) %>% 
+  #ungroup %>%
+  pivot_wider(names_from = Strate_pop, values_from = n) 
+co_strat
+```
+
+
+```{r}
+strate_chi = matrix(c(co_strat$"5", co_strat$"6", co_strat$"7", co_strat$"8", co_strat$"9", co_strat$"10"), ncol = 6, byrow = F)
+colnames(strate_chi) <- c("5", "6", "7", "8", "9", "10")
+rownames(strate_chi) <- c("Commune non défaillante", "Commune défaillante")
+kable(strate_chi, align = c("c", "c", "c", "c", "c", "c"))
+```
+
+```{r message=TRUE, warning=TRUE}
+strate_chi_test <- chisq.test(strate_chi)
+strate_chi_test
+```
+
+```{r}
+cramerV(strate_chi)
+```
+
+```{r}
+mosaicplot(strate_chi, shade = T, main = "", las = 1)
+```
+
+
+Ici, la p_value est inférieure à 0.001, on peut rejeter l'hypothèse nulle : les variables Strate_pop et Défaillance sont dépendantes (x²(5) = 47, p < 0.0001 ***). Toutefois, la force de cette dépendance est faible (V de Cramer : V = 0.12). <br>
+Parmi les défaillantes, on remarque une sous-représentation des communes de 3500 à moins de 5000 habitants mais une sur-représentation des communes de 20 000 à moins de 50 000 habitants et de 50 000 à moins de 100 000 haibitants.
+<br>
+On constate l'absence de dépendance entre le caractère rurale d'une commune et son éventuelle défaillance. En revanche, parmi les communes défaillantes, on observe une surreprésentation des communes ayant un quartier en politique de la ville ainsi que des communes de 20 000 à moins de 100 000 habitants.
+Il est donc est intéressant de tenir compte de ces variables dans notre modèle.
+
+```{r}
+xsq <- c("x²(1) = 1.47, p < 0.0001 ***", "x²(1) = 39.56, p < 0.0001 ***", "x²(5) = 47, p < 0.0001 ***")
+cramer <- c(0.026, 0.115, 0.124)
+variables <-  c("Commune rurale","Présence d'un QPV", "Strate de population")
+
+table_varcat = matrix(c(variables, xsq, cramer), nrow = 3, ncol = 3, byrow = F)
+colnames(table_varcat) <- c("Variables", "Test du chi2", "V de Cramer")
+
+
+kable(table_varcat, align = c("l","c","c"))
+```
+
+
+<br>
+<br>
+<br>
+<br>
+
+
+#### 2.5. Modèle définitif
+
+
+
+```{r}
+mdl_def <- glm(Défaillance ~ Présence_QPV + Strate_pop + Recettes_Fct_2019 + Dépenses_Fct_2019 + Dépenses_Ivt_2019 + CAF_2019 + Encours_dette_2019 + Epargne_gestion_2019 + Annuité_dette_2019 + Epargne_nette_2019, data = ofgl_gde, family = binomial)
+mdl_def
+```
+
+```{r}
+odds.ratio(mdl_def)
+```
+```{r}
+itpt_def <- c(0.043448, 0.018676, 0.1006, "2.741e-13 ***")
+qpv_def <- c(1.182285, 0.823355, 1.6901, 0.3610586)
+strate_def <- c(1.130757, 0.979214, 1.3043, "0.0926736 .")
+recf_def <- c("1.011962", "1.001071", "1.0239", "0.0446652 *")
+depf_def <- c("0.989207", "0.977649", "1.0000", "0.0667996 .")
+depi_def <- c(0.997971, 0.996734, 0.9991, "0.0006564 ***")
+caf_def <- c("0.997642", "0.996184", "0.9990", "0.0008654 ***")
+encours_def <- c("1.001347", "1.000933", "1.0018", "4.192e-10 ***")
+epg_def <- c("0.991813", "0.986624", "0.9969", "0.0020869 **")
+annuite_def <- c("0.991964", "0.980485", "1.0027", "0.1673147")
+epn_def <- c("0.985483", "0.973030", "0.9970", "0.0209131 *")
+table_def = matrix(c(itpt_def, qpv_def, strate_def, recf_def, depf_def, depi_def, caf_def, encours_def, epg_def, annuite_def, epn_def),
+                             nrow = 11, ncol = 4, byrow = T)
+rownames(table_def) <- c("Intercept", "Présence d'un QPV", "Strate de population","Recettes de fonctionnement", "Dépenses de fonctionnement", "Dépenses d'investissement", "CAF", "Encours de dette", "Épargne de gestion","Annuité de la dette", "Épargne nette")
+colnames(table_def) <- c("Odd Ratios", "2.5 %","97.5 %", "p-value")
+
+kable(table_def, align = c("c", "c", "c", "c", "c", "c", "c", "c", "c", "c", "c"))
+```
+
+
+```{r warning=TRUE}
+or_plot(ofgl_gde, "Défaillance", c("Présence_QPV" , "Strate_pop" , "Recettes_Fct_2019" , 
+    "Dépenses_Fct_2019" , "Dépenses_Ivt_2019" , "CAF_2019" , "Encours_dette_2019" , 
+    "Epargne_gestion_2019" , "Annuité_dette_2019" , "Epargne_nette_2019"))
+```
+
+
+
+
+
+
+
